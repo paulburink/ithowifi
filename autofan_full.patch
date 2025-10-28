@@ -1,0 +1,142 @@
+diff --git a/src/autofan.h b/src/autofan.h
+new file mode 100644
+index 0000000..e69de29
+--- /dev/null
++++ b/src/autofan.h
+@@
++#pragma once
++#include <stdint.h>
++
++struct AutoFanSettings {
++  bool enabled = false;
++  uint8_t baseSpeed = 10;
++  uint8_t triggerHumidity = 77;
++  uint8_t speed1 = 100;
++  uint16_t duration1 = 10;
++  uint8_t speed2 = 50;
++  uint16_t duration2 = 30;
++};
++
++class AutoFan {
++public:
++  AutoFan();
++  void begin();
++  void loop();
++  void loadSettings();
++  void saveSettings();
++  AutoFanSettings settings;
++private:
++  int state = 0;
++  unsigned long stateStart = 0;
++};
+diff --git a/src/autofan.cpp b/src/autofan.cpp
+new file mode 100644
+index 0000000..e69de29
+--- /dev/null
++++ b/src/autofan.cpp
+@@
++#include "autofan.h"
++#include <Preferences.h>
++#include "sht30.h"
++#include "fancontrol.h"
++
++static Preferences prefs;
++AutoFan::AutoFan() {}
++
++void AutoFan::begin() { loadSettings(); }
++
++void AutoFan::loadSettings() {
++  prefs.begin("autofan", true);
++  settings.enabled = prefs.getBool("enabled", false);
++  settings.baseSpeed = prefs.getUChar("baseSpeed", 10);
++  settings.triggerHumidity = prefs.getUChar("triggerH", 77);
++  settings.speed1 = prefs.getUChar("speed1", 100);
++  settings.duration1 = prefs.getUShort("dur1", 10);
++  settings.speed2 = prefs.getUChar("speed2", 50);
++  settings.duration2 = prefs.getUShort("dur2", 30);
++  prefs.end();
++}
++
++void AutoFan::saveSettings() {
++  prefs.begin("autofan", false);
++  prefs.putBool("enabled", settings.enabled);
++  prefs.putUChar("baseSpeed", settings.baseSpeed);
++  prefs.putUChar("triggerH", settings.triggerHumidity);
++  prefs.putUChar("speed1", settings.speed1);
++  prefs.putUShort("dur1", settings.duration1);
++  prefs.putUChar("speed2", settings.speed2);
++  prefs.putUShort("dur2", settings.duration2);
++  prefs.end();
++}
++
++void AutoFan::loop() {
++  if (!settings.enabled) return;
++  float hum = SHT30_readHumidity(); // vervang door jouw sensorfunctie
++  if (isnan(hum)) return;
++
++  unsigned long now = millis();
++  if (state == 0) {
++    if (hum > settings.triggerHumidity) {
++      FanControl::setPercentage(settings.speed1);
++      state = 1;
++      stateStart = now;
++      return;
++    }
++    FanControl::setPercentage(settings.baseSpeed);
++    return;
++  }
++  if (state == 1) {
++    if (now - stateStart >= (unsigned long)settings.duration1 * 60UL * 1000UL) {
++      FanControl::setPercentage(settings.speed2);
++      state = 2;
++      stateStart = now;
++    }
++    return;
++  }
++  if (state == 2) {
++    if (now - stateStart >= (unsigned long)settings.duration2 * 60UL * 1000UL) {
++      FanControl::setPercentage(settings.baseSpeed);
++      state = 0;
++      stateStart = 0;
++    }
++    return;
++  }
++}
+diff --git a/data/www/autofan.html b/data/www/autofan.html
+new file mode 100644
+index 0000000..e69de29
+--- /dev/null
++++ b/data/www/autofan.html
+@@
++<div>
++  <h3>Automatische ventilator</h3>
++  <label><input type="checkbox" id="afEnabled"> Inschakelen</label><br>
++  Basis snelheid: <input type="number" id="afBase" min="0" max="100"> %<br>
++  Trigger vochtigheid: <input type="number" id="afTrigger" min="0" max="100"> %<br>
++  Snelheid 1: <input type="number" id="afSpeed1" min="0" max="100"> %, Duur 1 (min): <input type="number" id="afDur1"><br>
++  Snelheid 2: <input type="number" id="afSpeed2" min="0" max="100"> %, Duur 2 (min): <input type="number" id="afDur2"><br>
++  <button onclick="saveAutoFan()">Opslaan</button>
++</div>
++<script src="autofan.js"></script>
+diff --git a/data/www/autofan.js b/data/www/autofan.js
+new file mode 100644
+index 0000000..e69de29
+--- /dev/null
++++ b/data/www/autofan.js
+@@
++function saveAutoFan() {
++    const data = {
++        enabled: document.getElementById("afEnabled").checked,
++        baseSpeed: parseInt(document.getElementById("afBase").value),
++        triggerHumidity: parseInt(document.getElementById("afTrigger").value),
++        speed1: parseInt(document.getElementById("afSpeed1").value),
++        duration1: parseInt(document.getElementById("afDur1").value),
++        speed2: parseInt(document.getElementById("afSpeed2").value),
++        duration2: parseInt(document.getElementById("afDur2").value)
++    };
++    fetch("/api/autofan/set", {
++        method: "POST",
++        headers: { "Content-Type": "application/json" },
++        body: JSON.stringify(data)
++    }).then(r => alert("Instellingen opgeslagen!"));
++}
